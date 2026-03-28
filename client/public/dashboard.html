@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - CV Tailor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+        }
+        
+        .navbar {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .navbar-brand {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .navbar-right {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .username {
+            color: #666;
+        }
+        
+        .logout-btn {
+            padding: 10px 20px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .logout-btn:hover {
+            background: #c0392b;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 20px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+        }
+        
+        .card-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+        }
+        
+        .card h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .card p {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .card button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .card button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <div class="navbar-brand">CV Tailor</div>
+        <div class="navbar-right">
+            <span class="username">Welcome, <strong id="usernameDisplay">User</strong></span>
+            <button class="logout-btn" onclick="logout()">Logout</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h1 style="margin-bottom: 30px; color: #333;">Dashboard</h1>
+        
+        <div class="stats" id="stats"></div>
+        
+        <div class="grid">
+            <div class="card">
+                <div class="card-icon">📄</div>
+                <h3>Create CV</h3>
+                <p>Build a professional CV from scratch with our intuitive editor.</p>
+                <button onclick="navigateTo('create-cv')">Create CV</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">🎯</div>
+                <h3>Tailor CV</h3>
+                <p>Optimize your CV for specific job postings to increase match scores.</p>
+                <button onclick="navigateTo('tailor-cv')">Tailor CV</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">🧠</div>
+                <h3>Job Recommendations</h3>
+                <p>Get AI-powered job recommendations based on your CV.</p>
+                <button onclick="navigateTo('recommendations')">View Jobs</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">📊</div>
+                <h3>Analytics</h3>
+                <p>Track your CV performance and job application history.</p>
+                <button onclick="navigateTo('analytics')">View Analytics</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">🎨</div>
+                <h3>Templates</h3>
+                <p>Choose from professionally designed CV templates.</p>
+                <button onclick="navigateTo('templates')">Browse Templates</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-icon">⚙️</div>
+                <h3>Settings</h3>
+                <p>Manage your account preferences and privacy settings.</p>
+                <button onclick="navigateTo('settings')">Settings</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE_URL = 'http://localhost:8000';
+        
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+            
+            if (!token) {
+                window.location.href = '/index.html';
+                return;
+            }
+            
+            document.getElementById('usernameDisplay').textContent = username || 'User';
+            loadAnalytics();
+        }
+        
+        async function loadAnalytics() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/analytics`);
+                const data = await response.json();
+                
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-number">${data.total_users}</div>
+                        <div class="stat-label">Active Users</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${data.cvs_created}</div>
+                        <div class="stat-label">CVs Created</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${data.jobs_tailored}</div>
+                        <div class="stat-label">Jobs Tailored</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">${(data.average_match_score * 100).toFixed(0)}%</div>
+                        <div class="stat-label">Avg Match Score</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+            }
+        }
+        
+        function navigateTo(page) {
+            alert(`Navigating to ${page}...`);
+        }
+        
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('username');
+                window.location.href = '/index.html';
+            }
+        }
+        
+        // Check authentication on page load
+        checkAuth();
+    </script>
+</body>
+</html>
