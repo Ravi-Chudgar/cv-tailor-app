@@ -13,5 +13,19 @@ export default defineConfig({
         rewrite: (path) => path
       }
     }
+  },
+  preview: {
+    port: 10001,
+    strictPort: false,
+    host: '0.0.0.0',
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      'cv-tailor-frontend-9gun.onrender.com',
+      '*.onrender.com',
+      '*.railway.app',
+      '*.herokuapp.com',
+      '*.digitalocean.app'
+    ]
   }
 })
