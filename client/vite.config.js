@@ -21,6 +21,8 @@ export default defineConfig({
     allowedHosts: [
       'localhost',
       '127.0.0.1',
+      'ravichudgar.com',
+      'www.ravichudgar.com',
       'cv-tailor-frontend-9gun.onrender.com',
       '*.onrender.com',
       '*.railway.app',
