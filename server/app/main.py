@@ -97,6 +97,9 @@ def get_allowed_origins():
         # Render deployment - specific URLs
         "https://cv-tailor-frontend-9gun.onrender.com",
         "https://cv-tailor-frontend.onrender.com",
+        # Custom domain (ravichudgar.com)
+        "https://www.ravichudgar.com",
+        "https://ravichudgar.com",
         # Add wildcard for any onrender.com subdomain (if FastAPI CORSMiddleware supports it)
     ]
     return origins
