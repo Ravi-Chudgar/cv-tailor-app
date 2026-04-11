@@ -131,7 +131,33 @@ Frontend runs at: **http://localhost:5173** (or next available port)
 
 ---
 
-## 🔐 Demo Credentials
+## � Quick Start with Docker
+
+The easiest way to run the entire application with a single command:
+
+```bash
+docker-compose up
+```
+
+This will automatically:
+- Build both backend and frontend images
+- Start the backend on **http://localhost:8001**
+- Start the frontend on **http://localhost:5173**
+- Enable hot reload for development
+
+**Requirements:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop) installed
+
+**Stop the services:**
+```bash
+docker-compose down
+```
+
+For detailed Docker commands and troubleshooting, see [DOCKER_SETUP.md](DOCKER_SETUP.md) and [DOCKER_COMMANDS.md](DOCKER_COMMANDS.md)
+
+---
+
+## �🔐 Demo Credentials
 
 | Role | Email | Password |
 |------|-------|----------|
