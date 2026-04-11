@@ -1,15 +1,32 @@
-# Render Blueprint for CV Tailor FastAPI App
+# Render Blueprint for CV Tailor App
+# Deploys both FastAPI backend and React frontend
 # Docs: https://render.com/docs/blueprint-spec
 
 services:
+  # Backend Service
   - type: web
-    name: cv-tailor-server
+    name: cv-tailor-backend
     env: python
-    buildCommand: pip install -r server/requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+    buildCommand: pip install --prefer-binary -r server/requirements.txt
+    startCommand: cd server && uvicorn app.main:app --host 0.0.0.0 --port 10000
     envVars:
       - key: PORT
         value: 10000
+      - key: PYTHONUNBUFFERED
+        value: 1
     plan: free
     autoDeploy: true
-    rootDir: server
+
+  # Frontend Service
+  - type: web
+    name: cv-tailor-frontend
+    env: node
+    buildCommand: cd client && npm install --legacy-peer-deps && npm run build
+    startCommand: cd client && npm run preview -- --host 0.0.0.0 --port 10001
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          name: cv-tailor-backend
+          property: host
+    plan: free
+    autoDeploy: true
