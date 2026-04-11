@@ -81,10 +81,11 @@ app = FastAPI(
 # Initialize Excel-based user storage
 ensure_users_file()
 
-# CORS configuration
+# CORS configuration - Allow all deployment platforms
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        # Local development
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:5174",
@@ -93,6 +94,21 @@ app.add_middleware(
         "http://localhost:8080",
         "http://localhost:8000",
         "http://localhost:8001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        # Render deployment
+        "https://cv-tailor-frontend-9gun.onrender.com",
+        "https://cv-tailor-frontend.onrender.com",
+        # Allow all onrender.com domains (dynamic)
+        # Note: Render generates random subdomains, so we'll use the specific ones
+        # Production domains
+        "https://cv-tailor-app.vercel.app",
+        # Railway
+        "https://cv-tailor-frontend.railway.app",
+        # DigitalOcean
+        "https://cv-tailor-frontend.ondigitalocean.app",
+        # Heroku
+        "https://cv-tailor-frontend.herokuapp.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
