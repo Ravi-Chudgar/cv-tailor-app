@@ -66,7 +66,8 @@ def _score_keyword_match(
     web_keywords: Dict[str, List[str]],
 ) -> Tuple[int, List[str], List[str], List[str]]:
     """
-    Score: what % of JD + web-searched keywords appear in the CV.
+    Score: what % of JD + web-searched keywords appear in the CV,
+    weighted by whether their FREQUENCY in the CV approaches the JD frequency.
     Returns (score_0_100, matched_list, missing_list, recommendations)
     """
     all_kw = set()
@@ -81,20 +82,49 @@ def _score_keyword_match(
         return 100, [], [], ["No keywords extracted from the job description."]
 
     cv_lower = cv_text.lower()
-    matched = sorted([k for k in all_kw if k in cv_lower])
-    missing = sorted([k for k in all_kw if k not in cv_lower])
+    keyword_freq = jd_keywords.get('keyword_freq', {})
 
-    coverage = len(matched) / len(all_kw) * 100
-    score = min(round(coverage), 100)
+    matched = []
+    missing = []
+    freq_score_sum = 0.0
+
+    for k in sorted(all_kw):
+        cv_count = len(re.findall(re.escape(k), cv_lower))
+        if cv_count > 0:
+            matched.append(k)
+            # Score based on frequency match (JD count vs CV count)
+            jd_count = keyword_freq.get(k, 1)
+            ratio = min(cv_count / max(jd_count, 1), 1.0)
+            freq_score_sum += ratio
+        else:
+            missing.append(k)
+
+    # Overall score = weighted combination of coverage and frequency match
+    coverage = len(matched) / len(all_kw)
+    freq_avg = freq_score_sum / len(all_kw) if all_kw else 1.0
+    # 60% weight on coverage, 40% on frequency matching
+    combined = (coverage * 0.6 + freq_avg * 0.4) * 100
+    score = min(round(combined), 100)
 
     recs: List[str] = []
     if missing:
         top_missing = [m.title() for m in missing[:8]]
         recs.append(f"Missing keywords: {', '.join(top_missing)}")
+
+    # Check for under-represented keywords
+    under_rep = []
+    for k in matched:
+        jd_count = keyword_freq.get(k, 1)
+        cv_count = len(re.findall(re.escape(k), cv_lower))
+        if cv_count < jd_count:
+            under_rep.append(f"{k.title()} ({cv_count}x vs {jd_count}x in JD)")
+    if under_rep:
+        recs.append(f"Low frequency keywords: {', '.join(under_rep[:5])}. Use them more often.")
+
     if score < 60:
         recs.append("Keyword match is low — tailor your Skills and Summary sections to the job description.")
     elif score < 80:
-        recs.append("Good keyword coverage — add a few more missing terms to push past 80%.")
+        recs.append("Good keyword coverage — add a few more missing terms and increase keyword frequency.")
     else:
         recs.append("Strong keyword match — well aligned with the job description.")
 
@@ -400,6 +430,14 @@ def calculate_ats_score(
     fmt_score, fmt_recs = _score_formatting_structure(cv_text)
     imp_score, imp_recs = _score_impact_content(cv_text)
     ats_score, ats_recs = _score_ats_compatibility(cv_text)
+
+    # Bonus/penalty for job title match (Jobscan checks this explicitly)
+    job_title = jd_keywords.get('job_title', '')
+    if job_title and job_title.lower() in cv_text.lower():
+        kw_score = min(100, kw_score + 5)   # bonus
+    elif job_title:
+        kw_score = max(0, kw_score - 5)     # penalty
+        kw_recs.append(f"Include the exact job title '{job_title}' in your summary or experience.")
 
     overall = round(
         kw_score  * W_KEYWORD +

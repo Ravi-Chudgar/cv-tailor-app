@@ -75,18 +75,57 @@ def extract_name(text: str) -> Optional[str]:
 
 
 def extract_location(text: str) -> Optional[str]:
-    """Extract location/city from text"""
-    # Common location patterns
-    location_patterns = [
-        r'(?:Location|City|Based in)[:\s]+([^,\n]+)',
-        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?),?\s+([A-Z]{2})',  # City, State
+    """Extract location/city from text.
+    Returns the most complete address string found (e.g. 'London, United Kingdom').
+    """
+    # Restrict search to the first ~400 chars (header area)
+    header = text[:400]
+
+    # 1. Explicit label:  "Location: London, UK"
+    m = re.search(r'(?:Location|City|Address|Based in)[:\s]+([^\n]+)', header, re.IGNORECASE)
+    if m:
+        return m.group(1).strip().rstrip('|').strip()
+
+    # 2. City, Country / City, State patterns in header area
+    #    Use [ ]+ (space only) instead of \s+ to avoid matching across newlines
+    m = re.search(
+        r'([A-Z][a-z]+(?:[ ]+[A-Z][a-z]+)*),[ ]*'
+        r'(United Kingdom|United States|India|UK|USA?|Canada|Australia|Germany|'
+        r'France|Netherlands|Ireland|Singapore|UAE|Dubai|Remote|'
+        r'[A-Z]{2})\b',
+        header,
+    )
+    if m:
+        city = m.group(1)
+        region = m.group(2)
+        # Expand abbreviations for ATS full-address match
+        _expand = {'UK': 'United Kingdom', 'US': 'United States', 'USA': 'United States'}
+        region = _expand.get(region, region)
+        return f"{city}, {region}"
+
+    # 3. Standalone well-known city names
+    cities = [
+        ('London', 'United Kingdom'), ('Manchester', 'United Kingdom'),
+        ('Birmingham', 'United Kingdom'), ('Edinburgh', 'United Kingdom'),
+        ('Mumbai', 'India'), ('Bangalore', 'India'), ('Delhi', 'India'),
+        ('Hyderabad', 'India'), ('Chennai', 'India'), ('Pune', 'India'),
+        ('New York', 'United States'), ('San Francisco', 'United States'),
+        ('Seattle', 'United States'), ('Chicago', 'United States'),
+        ('Toronto', 'Canada'), ('Sydney', 'Australia'),
+        ('Dublin', 'Ireland'), ('Berlin', 'Germany'), ('Amsterdam', 'Netherlands'),
+        ('Singapore', 'Singapore'), ('Dubai', 'UAE'), ('Remote', ''),
     ]
-    
-    for pattern in location_patterns:
-        matches = re.search(pattern, text, re.IGNORECASE)
-        if matches:
-            return matches.group(1)
-    
+    for city, country in cities:
+        if re.search(r'\b' + re.escape(city) + r'\b', header, re.IGNORECASE):
+            return f"{city}, {country}" if country else city
+
+    # 4. Country-only mention in header
+    countries = ['United Kingdom', 'UK', 'India', 'USA', 'United States', 'Canada', 'Australia']
+    for c in countries:
+        if re.search(r'\b' + re.escape(c) + r'\b', header, re.IGNORECASE):
+            _expand = {'UK': 'United Kingdom', 'USA': 'United States'}
+            return _expand.get(c, c)
+
     return None
 
 
@@ -382,20 +421,15 @@ def create_professional_cv(parsed_data: Dict, job_description: str = "") -> str:
     # Build contact line
     contact_parts = []
     raw_upper = raw_text[:600].upper() if raw_text else ''
-    # Use location override if provided, otherwise detect from text
+    # Use location override if provided, otherwise use parsed location
     location_override = parsed_data.get('location', '').strip()
     if location_override:
         contact_parts.append(location_override)
     else:
-        first_lines = raw_text[:300] if raw_text else ''
-        if re.search(r'\bUK\b', first_lines):
-            contact_parts.append('UK')
-        elif re.search(r'\bIndia\b', first_lines, re.IGNORECASE):
-            contact_parts.append('India')
-        elif re.search(r'\bLondon\b', first_lines, re.IGNORECASE):
-            contact_parts.append('London')
-        elif re.search(r'\bUSA?\b', first_lines):
-            contact_parts.append('USA')
+        # extract_location already returns a full "City, Country" string
+        parsed_location = extract_location(raw_text) if raw_text else None
+        if parsed_location:
+            contact_parts.append(parsed_location)
     if email:
         contact_parts.append(email)
     if phone:

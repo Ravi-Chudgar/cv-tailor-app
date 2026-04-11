@@ -12,11 +12,14 @@ from html import unescape
 def extract_job_keywords(job_description: str) -> Dict[str, List[str]]:
     """
     Extract structured keywords from a job description text.
+    Uses BOTH a known-skill list AND NLP n-gram extraction to catch
+    domain-specific terms the static list would miss (e.g. "regulatory compliance",
+    "task automation", "Microsoft Certified").
     Returns categories: skills, tools, soft_skills, certifications
     """
     jd_lower = job_description.lower()
 
-    # Technical skills / languages
+    # ---- 1. Static pattern matching (existing behaviour) ----
     tech_patterns = [
         'python', 'java', 'javascript', 'typescript', 'c#', 'c\\+\\+', 'ruby',
         'go', 'golang', 'rust', 'php', 'scala', 'kotlin', 'swift', 'r\\b',
@@ -33,7 +36,7 @@ def extract_job_keywords(job_description: str) -> Dict[str, List[str]]:
         'webpack', 'vite', 'babel', 'eslint', 'prettier',
         'jest', 'mocha', 'pytest', 'rspec', 'selenium', 'cypress',
         'kafka', 'rabbitmq', 'celery', 'sidekiq',
-        'linux', 'unix', 'bash', 'powershell',
+        'linux', 'unix', 'bash', 'powershell', 'shell scripting',
         'nginx', 'apache', 'caddy',
         'redis', 'memcached',
         'machine learning', 'deep learning', 'nlp', 'computer vision',
@@ -41,12 +44,21 @@ def extract_job_keywords(job_description: str) -> Dict[str, List[str]]:
         'data science', 'big data', 'spark', 'hadoop', 'airflow',
         'microservices', 'serverless', 'event-driven',
         'figma', 'sketch', 'adobe xd',
+        # Automation / admin specific
+        'scripting', 'task automation', 'process automation', 'workflow automation',
+        'active directory', 'sccm', 'intune', 'group policy',
+        'siem', 'splunk', 'servicenow', 'jira', 'confluence',
+        'vmware', 'hyper-v', 'virtualisation', 'virtualization',
+        'networking', 'tcp/ip', 'dns', 'dhcp', 'vpn', 'firewall',
+        'itil', 'itsm', 'change management',
+        'regulatory compliance', 'data governance', 'risk management',
+        'power automate', 'power bi', 'sharepoint', 'exchange',
+        'office 365', 'microsoft 365', 'm365',
     ]
 
     found_skills = []
     for pattern in tech_patterns:
         if re.search(r'\b' + pattern + r'\b', jd_lower):
-            # Clean up the pattern for display
             skill = pattern.replace('\\b', '').replace('\\.', '.').replace('\\+', '+')
             found_skills.append(skill)
 
@@ -62,6 +74,10 @@ def extract_job_keywords(job_description: str) -> Dict[str, List[str]]:
         'documentation', 'architecture', 'design patterns',
         'scalability', 'reliability', 'observability',
         'monitoring', 'logging', 'debugging',
+        'troubleshooting', 'incident management', 'root cause analysis',
+        'project management', 'time management', 'attention to detail',
+        'critical thinking', 'decision making', 'teamwork',
+        'adaptability', 'continuous improvement',
     ]
 
     found_soft = []
@@ -74,18 +90,184 @@ def extract_job_keywords(job_description: str) -> Dict[str, List[str]]:
         'aws certified', 'azure certified', 'gcp certified',
         'pmp', 'scrum master', 'kubernetes certified',
         'cissp', 'comptia', 'oracle certified',
+        'microsoft certified', 'itil certified', 'itil foundation',
+        'ccna', 'ccnp', 'az-900', 'az-104', 'az-500',
+        'aws solutions architect', 'aws developer',
+        'certified ethical hacker', 'ceh',
+        'security\\+', 'network\\+', 'a\\+',
     ]
 
     found_certs = []
     for pattern in cert_patterns:
-        if pattern in jd_lower:
-            found_certs.append(pattern)
+        if re.search(r'\b' + pattern + r'\b', jd_lower):
+            cert = pattern.replace('\\+', '+')
+            found_certs.append(cert)
+
+    # ---- 2. NLP n-gram extraction to catch JD-specific phrases ----
+    # Extract meaningful 1-3 word phrases that appear multiple times or
+    # match "skill-like" patterns in the JD but aren't in our static list.
+    nlp_keywords = _extract_nlp_keywords(job_description)
+
+    # Merge NLP-found keywords that aren't already captured
+    # Filter out NLP n-grams that are just combinations of static skills or
+    # fragments of the job title  —  these add noise, not value.
+    all_found_lower = {s.lower() for s in found_skills + found_soft + found_certs}
+    job_title_lower = _extract_job_title(job_description).lower()
+    # Normalize job title (strip special chars + collapse spaces) for substring comparison
+    job_title_norm = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', '', job_title_lower)).strip()
+    for kw in nlp_keywords:
+        kw_l = kw.lower()
+        if kw_l in all_found_lower:
+            continue
+        # Skip if every word in the n-gram is already a standalone skill
+        words = kw_l.split()
+        if all(any(w in sk for sk in all_found_lower) for w in words):
+            continue
+        # Skip if the n-gram is a substring of the job title (normalized)
+        kw_norm = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', '', kw_l)).strip()
+        if kw_norm in job_title_norm:
+            continue
+        # Skip single tokens that look like truncated words (< 5 chars after title removal)
+        if len(words) == 1 and len(words[0]) < 5:
+            continue
+        found_skills.append(kw)
+        all_found_lower.add(kw_l)
+
+    # ---- 3. Count keyword frequency in JD for smart injection later ----
+    keyword_freq = {}
+    for kw in found_skills + found_soft + found_certs:
+        count = len(re.findall(re.escape(kw.lower()), jd_lower))
+        if count > 0:
+            keyword_freq[kw.lower()] = count
+
+    # ---- 4. Extract job title from JD ----
+    job_title = _extract_job_title(job_description)
 
     return {
         'skills': found_skills,
         'soft_skills': found_soft,
         'certifications': found_certs,
+        'keyword_freq': keyword_freq,
+        'job_title': job_title,
     }
+
+
+def _extract_job_title(job_description: str) -> str:
+    """
+    Extract the job title from a job description.
+    Looks for common patterns like 'Job Title: ...', 'Position: ...',
+    or treats the first short meaningful line as the title.
+    """
+    lines = [l.strip() for l in job_description.strip().split('\n') if l.strip()]
+    if not lines:
+        return ''
+
+    # Pattern 1: explicit label  (e.g.  "Job Title: Tools & Automation Admin")
+    for line in lines[:10]:
+        m = re.match(
+            r'^(?:job\s*title|position|role|title)\s*[:\-–]\s*(.+)',
+            line, re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).strip().rstrip('.')
+
+    # Pattern 2: first line that looks like a title (short, no sentence punctuation)
+    first = lines[0]
+    if len(first) < 100 and not first.endswith('.') and not first.lower().startswith(('we ', 'our ', 'the ', 'a ', 'an ')):
+        return first.strip()
+
+    # Pattern 3: look for "hiring ... <title>" or "looking for ... <title>"
+    full = ' '.join(lines[:5])
+    m = re.search(
+        r'(?:hiring|looking\s+for|seeking|recruit)\s+(?:a\s+|an\s+)?(.+?)(?:\.|,|to\s+join| who| with)',
+        full, re.IGNORECASE,
+    )
+    if m:
+        return m.group(1).strip()
+
+    return lines[0][:80] if lines else ''
+
+
+# Stop words for NLP extraction
+_STOP_WORDS = {
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+    'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'be',
+    'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+    'would', 'could', 'should', 'may', 'might', 'can', 'shall', 'must',
+    'this', 'that', 'these', 'those', 'it', 'its', 'they', 'them', 'their',
+    'we', 'our', 'you', 'your', 'he', 'she', 'his', 'her', 'i', 'me', 'my',
+    'not', 'no', 'if', 'then', 'than', 'so', 'up', 'out', 'about', 'into',
+    'over', 'after', 'before', 'between', 'under', 'such', 'each', 'every',
+    'all', 'both', 'few', 'more', 'most', 'other', 'some', 'any', 'only',
+    'same', 'also', 'very', 'just', 'because', 'through', 'during', 'where',
+    'when', 'which', 'who', 'whom', 'what', 'how', 'why', 'here', 'there',
+    # Job-description filler words
+    'role', 'position', 'candidate', 'ability', 'experience', 'work',
+    'working', 'team', 'company', 'required', 'requirements', 'preferred',
+    'responsibilities', 'responsible', 'including', 'including', 'ensure',
+    'support', 'within', 'across', 'using', 'strong', 'good', 'excellent',
+    'years', 'year', 'minimum', 'least', 'well', 'new', 'etc', 'e.g',
+    'knowledge', 'understanding', 'join', 'looking', 'seeking', 'apply',
+    'qualification', 'qualifications', 'opportunity', 'environment',
+    'processes', 'process', 'systems', 'system', 'tools', 'tool',
+    'manage', 'management', 'maintain', 'implement', 'develop',
+    'skills', 'skill', 'solutions', 'solution', 'services', 'service',
+    'stakeholders', 'issues', 'complex', 'resolve', 'needs',
+}
+
+
+def _extract_nlp_keywords(job_description: str) -> List[str]:
+    """
+    Extract meaningful keyword phrases from JD using n-gram frequency analysis.
+    Finds domain-specific terms that a static list would miss.
+    """
+    # Tokenize: keep letters, digits, hyphens, slashes, plus signs
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9+#/.\-]*(?:'s)?", job_description)
+    # Lowercase tokens, filter stop words
+    filtered = [t.lower().removesuffix("'s") for t in tokens if t.lower().removesuffix("'s") not in _STOP_WORDS and len(t) > 2]
+
+    # Count unigrams
+    from collections import Counter
+    uni_counts = Counter(filtered)
+
+    # Build bigrams and trigrams from the original token stream
+    bigrams = []
+    trigrams = []
+    for i in range(len(filtered) - 1):
+        bigrams.append(f"{filtered[i]} {filtered[i+1]}")
+    for i in range(len(filtered) - 2):
+        trigrams.append(f"{filtered[i]} {filtered[i+1]} {filtered[i+2]}")
+
+    bi_counts = Counter(bigrams)
+    tri_counts = Counter(trigrams)
+
+    results = []
+
+    # Trigrams that appear 2+ times are very likely important phrases
+    for phrase, count in tri_counts.most_common(10):
+        if count >= 2:
+            results.append(phrase.title())
+
+    # Bigrams appearing 2+ times
+    for phrase, count in bi_counts.most_common(20):
+        if count >= 2:
+            results.append(phrase.title())
+
+    # Unigrams appearing 3+ times (technical nouns, not filler)
+    for word, count in uni_counts.most_common(30):
+        if count >= 3 and word not in _STOP_WORDS:
+            results.append(word.title())
+
+    # Deduplicate while preserving order
+    seen = set()
+    deduped = []
+    for r in results:
+        key = r.lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+
+    return deduped[:20]
 
 
 async def search_job_keywords_online(job_title: str, existing_keywords: List[str] = None) -> Dict:
@@ -380,18 +562,37 @@ def _get_curated_keywords(job_title: str, exclude: Set[str]) -> Dict:
 
 def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict) -> str:
     """
-    Aggressively inject ALL missing keywords from job description and web search
-    into the tailored CV content. Adds to skills, summary, and experience sections.
+    Inject missing keywords from job description and web search into the
+    tailored CV content. Ensures keyword FREQUENCY in the resume approaches
+    the frequency in the JD so that ATS scanners (Jobscan-style) see a high
+    match rate.
+
+    Strategy:
+      1. Insert the exact job title from the JD into the summary (Jobscan
+         "Job Title Match" check).
+      2. Add missing skills into the Skills section.
+      3. Weave high-frequency JD keywords into Summary, Experience bullets,
+         and a new "Key Competencies" line so they appear multiple times.
+      4. Add missing certifications.
+      5. Ensure soft skills appear in experience bullet context.
     """
     lines = cv_text.split('\n')
     cv_lower = cv_text.lower()
 
+    # ---- Job title from JD (critical for Jobscan "Job Title Match") ----
+    job_title = jd_keywords.get('job_title', '')
+
+    # ---- Collect JD keyword frequencies ----
+    keyword_freq = jd_keywords.get('keyword_freq', {})
+
     # Collect ALL keywords not already in the CV
     new_skills = []
+    _seen_lower = set()
     for skill in jd_keywords.get('skills', []) + web_keywords.get('trending_skills', []):
-        if skill.lower() not in cv_lower:
+        sl = skill.lower()
+        if sl not in cv_lower and sl not in _seen_lower:
             new_skills.append(skill)
-    new_skills = list(dict.fromkeys(new_skills))  # deduplicate, keep all
+            _seen_lower.add(sl)
 
     new_soft = []
     for ss in jd_keywords.get('soft_skills', []):
@@ -413,8 +614,20 @@ def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict)
 
     action_verbs = web_keywords.get('action_verbs', [])
 
-    if not new_skills and not new_soft and not new_industry and not new_certs:
-        return cv_text  # Nothing new to add
+    # ---- Identify keywords that EXIST in CV but need more occurrences ----
+    boost_keywords = {}  # keyword -> how many more times to add
+    all_jd_kw = (
+        jd_keywords.get('skills', []) +
+        jd_keywords.get('soft_skills', []) +
+        jd_keywords.get('certifications', [])
+    )
+    for kw in all_jd_kw:
+        kw_l = kw.lower()
+        jd_count = keyword_freq.get(kw_l, 1)
+        cv_count = len(re.findall(re.escape(kw_l), cv_lower))
+        # If the JD uses it more than the CV, we need to boost
+        if cv_count > 0 and cv_count < jd_count:
+            boost_keywords[kw] = max(1, jd_count - cv_count)
 
     # Group new skills into categories for proper display
     def _categorize_skills(skills_list):
@@ -468,10 +681,10 @@ def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict)
         if is_section_header:
             # Flush pending state before entering new section
             if in_skills_section and not skills_section_done:
-                _inject_skills_lines(result_lines, skill_cats, new_soft, new_industry)
+                _inject_skills_lines(result_lines, skill_cats, new_soft, new_industry, boost_keywords)
                 skills_section_done = True
             if in_summary_section and summary_lines:
-                _flush_summary(result_lines, summary_lines, new_soft, new_industry)
+                _flush_summary(result_lines, summary_lines, new_soft, new_industry, boost_keywords, job_title)
                 summary_lines = []
 
             in_skills_section = upper in ('TECHNICAL SKILLS', 'CORE COMPETENCIES', 'SKILLS', 'KEY SKILLS')
@@ -490,14 +703,14 @@ def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict)
                 summary_lines.append(stripped)
             else:
                 if summary_lines:
-                    _flush_summary(result_lines, summary_lines, new_soft, new_industry)
+                    _flush_summary(result_lines, summary_lines, new_soft, new_industry, boost_keywords, job_title)
                     summary_lines = []
                 result_lines.append(line)
                 in_summary_section = False
             i += 1
             continue
 
-        # Enhance experience bullets with action verbs
+        # Enhance experience bullets with action verbs AND keyword boosting
         if in_experience_section and stripped.startswith(('•', '- ', '* ')) and action_verbs:
             bullet_text = stripped.lstrip('•-* ').strip()
             # If bullet doesn't start with an action verb, prepend one
@@ -511,8 +724,29 @@ def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict)
                 if action_verbs:
                     verb = action_verbs[experience_bullet_count % len(action_verbs)]
                     bullet_text = f"{verb} {bullet_text[0].lower()}{bullet_text[1:]}" if bullet_text else bullet_text
+
+            # Boost: try to weave a high-frequency keyword into this bullet
+            bullet_text = _boost_bullet(bullet_text, boost_keywords)
+
+            # Inject a soft skill naturally into some bullets (Jobscan soft-skills check)
+            if new_soft and experience_bullet_count % 3 == 0:
+                soft = new_soft.pop(0)
+                if soft.lower() not in bullet_text.lower():
+                    bullet_text = f"{bullet_text}, demonstrating strong {soft}"
+
+            # Add measurable result if bullet lacks numbers (Jobscan recruiter tip)
+            if not re.search(r'\d+', bullet_text):
+                bullet_text = _add_measurable_result(bullet_text, experience_bullet_count)
+
             experience_bullet_count += 1
             result_lines.append(f"• {bullet_text}")
+            i += 1
+            continue
+
+        # In skills section, boost existing skill lines
+        if in_skills_section and stripped.startswith(('•', '- ', '* ')):
+            boosted = _boost_skill_line(stripped, boost_keywords)
+            result_lines.append(boosted)
             i += 1
             continue
 
@@ -522,9 +756,9 @@ def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict)
 
     # Handle case where summary or skills was the last section
     if summary_lines:
-        _flush_summary(result_lines, summary_lines, new_soft, new_industry)
+        _flush_summary(result_lines, summary_lines, new_soft, new_industry, boost_keywords, job_title)
     if in_skills_section and not skills_section_done:
-        _inject_skills_lines(result_lines, skill_cats, new_soft, new_industry)
+        _inject_skills_lines(result_lines, skill_cats, new_soft, new_industry, boost_keywords)
 
     # If there are certifications to add and no CERTIFICATES section exists
     enhanced = '\n'.join(result_lines)
@@ -536,7 +770,67 @@ def inject_keywords_into_cv(cv_text: str, jd_keywords: Dict, web_keywords: Dict)
     return enhanced
 
 
-def _inject_skills_lines(result_lines: list, skill_cats: dict, new_soft: list, new_industry: list):
+def _boost_bullet(bullet_text: str, boost_keywords: Dict[str, int]) -> str:
+    """Try to naturally append a keyword that needs more occurrences to a bullet."""
+    if not boost_keywords:
+        return bullet_text
+    # Pick the keyword with the highest remaining deficit
+    best_kw = max(boost_keywords, key=boost_keywords.get)
+    if boost_keywords[best_kw] <= 0:
+        return bullet_text
+    # Only add if the keyword isn't already in this bullet
+    if best_kw.lower() not in bullet_text.lower():
+        bullet_text = f"{bullet_text}, utilizing {best_kw}"
+        boost_keywords[best_kw] -= 1
+    return bullet_text
+
+
+def _boost_skill_line(line: str, boost_keywords: Dict[str, int]) -> str:
+    """Append keywords that need boosting to an existing skill-category line.
+    Only appends if the keyword is contextually related to the line content."""
+    if not boost_keywords:
+        return line
+    additions = []
+    line_lower = line.lower()
+    for kw, deficit in list(boost_keywords.items()):
+        if deficit > 0 and kw.lower() not in line_lower:
+            # Only add if at least one word of this skill line is related
+            kw_words = set(kw.lower().split())
+            line_words = set(re.findall(r'[a-z]+', line_lower))
+            if kw_words & line_words:  # share at least one word
+                additions.append(kw)
+                boost_keywords[kw] -= 1
+                if len(additions) >= 1:
+                    break
+    if additions:
+        line = line.rstrip()
+        if line.endswith('.'):
+            line = line[:-1]
+        line += ', ' + ', '.join(additions)
+    return line
+
+
+def _add_measurable_result(bullet_text: str, bullet_index: int) -> str:
+    """Add a quantifiable metric to a bullet point that lacks numbers.
+    Rotates through contextual result phrases so they don't repeat."""
+    metrics = [
+        ', resulting in a 30% improvement in efficiency',
+        ', reducing processing time by 25%',
+        ', improving team productivity by 20%',
+        ', supporting 50+ users across the organisation',
+        ', decreasing manual effort by 40%',
+        ', achieving 99.9% system uptime',
+        ', saving approximately 15 hours per week',
+        ', handling 100+ requests per day',
+        ', cutting turnaround time by 35%',
+        ', improving compliance adherence by 45%',
+    ]
+    # Strip trailing period before appending metric
+    text = bullet_text.rstrip('.')
+    return text + metrics[bullet_index % len(metrics)]
+
+
+def _inject_skills_lines(result_lines: list, skill_cats: dict, new_soft: list, new_industry: list, boost_keywords: dict = None):
     """Add categorized skill lines into the skills section."""
     for cat_name, cat_skills in skill_cats.items():
         result_lines.append(f"• {cat_name}: {', '.join(cat_skills)}")
@@ -548,11 +842,25 @@ def _inject_skills_lines(result_lines: list, skill_cats: dict, new_soft: list, n
         extras.extend(new_industry)
     if extras:
         result_lines.append(f"• Methodologies & Skills: {', '.join(extras)}")
+    # Add a "Key Competencies" line with boosted keywords for frequency
+    if boost_keywords:
+        boost_list = [kw for kw, deficit in boost_keywords.items() if deficit > 0]
+        if boost_list:
+            result_lines.append(f"• Key Competencies: {', '.join(boost_list[:10])}")
+            for kw in boost_list[:10]:
+                if kw in boost_keywords:
+                    boost_keywords[kw] = max(0, boost_keywords[kw] - 1)
 
 
-def _flush_summary(result_lines: list, summary_lines: list, new_soft: list, new_industry: list):
-    """Flush enhanced summary with injected keywords."""
+def _flush_summary(result_lines: list, summary_lines: list, new_soft: list, new_industry: list, boost_keywords: dict = None, job_title: str = ''):
+    """Flush enhanced summary with injected job title, keywords, and boosted frequency."""
     summary_text = ' '.join(summary_lines)
+
+    # ---- Inject exact job title (critical for Jobscan "Job Title Match") ----
+    if job_title and job_title.lower() not in summary_text.lower():
+        # Prepend the job title naturally; use period separator to avoid mangling capitalisation
+        summary_text = f"Results-driven {job_title}. {summary_text}" if summary_text else f"Results-driven {job_title}."
+
     additions = []
     if new_soft:
         additions.extend(new_soft[:5])
@@ -560,4 +868,13 @@ def _flush_summary(result_lines: list, summary_lines: list, new_soft: list, new_
         additions.extend(new_industry[:5])
     if additions:
         summary_text += f" Demonstrated expertise in {', '.join(additions)}."
+    # Boost high-frequency keywords by weaving them into the summary
+    if boost_keywords:
+        boost_phrases = []
+        for kw, deficit in list(boost_keywords.items()):
+            if deficit > 0 and kw.lower() not in summary_text.lower():
+                boost_phrases.append(kw)
+                boost_keywords[kw] -= 1
+        if boost_phrases:
+            summary_text += f" Proficient in {', '.join(boost_phrases[:6])} with hands-on experience."
     result_lines.append(summary_text)

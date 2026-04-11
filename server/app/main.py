@@ -19,6 +19,38 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle, HRFlowable
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import platform
+
+# Register TrueType fonts for ATS-compatible PDF output
+_FONTS_REGISTERED = False
+def _register_fonts():
+    global _FONTS_REGISTERED
+    if _FONTS_REGISTERED:
+        return
+    try:
+        if platform.system() == 'Windows':
+            font_dir = 'C:/Windows/Fonts'
+        elif platform.system() == 'Darwin':
+            font_dir = '/Library/Fonts'
+        else:
+            font_dir = '/usr/share/fonts/truetype/liberation'
+        
+        import os as _os
+        # Try Arial first (Windows), then Liberation Sans (Linux)
+        regular = _os.path.join(font_dir, 'arial.ttf')
+        bold = _os.path.join(font_dir, 'arialbd.ttf')
+        if not _os.path.exists(regular):
+            regular = _os.path.join('/usr/share/fonts/truetype/liberation', 'LiberationSans-Regular.ttf')
+            bold = _os.path.join('/usr/share/fonts/truetype/liberation', 'LiberationSans-Bold.ttf')
+        pdfmetrics.registerFont(TTFont('Arial', regular))
+        pdfmetrics.registerFont(TTFont('Arial-Bold', bold))
+        _FONTS_REGISTERED = True
+        print('[PDF] Registered TrueType fonts (Arial) for ATS compatibility')
+    except Exception as e:
+        print(f'[PDF] Warning: Could not register TrueType fonts: {e}. Falling back to Helvetica.')
+        _FONTS_REGISTERED = True  # Don't retry
 from .users_storage import (
     ensure_users_file,
     get_all_users,
@@ -65,6 +97,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Models
@@ -775,6 +808,17 @@ def create_pdf_from_content(cv_content: str, template: str = "professional") -> 
     
     try:
         import re as re_mod
+        _register_fonts()
+        
+        # Use embedded TrueType font if available, else fallback
+        try:
+            pdfmetrics.getFont('Arial')
+            FONT_REGULAR = 'Arial'
+            FONT_BOLD = 'Arial-Bold'
+        except KeyError:
+            FONT_REGULAR = 'Helvetica'
+            FONT_BOLD = 'Helvetica-Bold'
+        
         buffer = BytesIO()
         
         doc = SimpleDocTemplate(
@@ -800,7 +844,7 @@ def create_pdf_from_content(cv_content: str, template: str = "professional") -> 
         # Name style - large, bold, centered
         name_style = ParagraphStyle(
             'CVName', parent=styles['Title'],
-            fontSize=16, fontName='Helvetica-Bold', alignment=TA_CENTER,
+            fontSize=16, fontName=FONT_BOLD, alignment=TA_CENTER,
             spaceAfter=1, spaceBefore=0, textColor=BLACK, leading=18
         )
         
@@ -808,13 +852,13 @@ def create_pdf_from_content(cv_content: str, template: str = "professional") -> 
         contact_style = ParagraphStyle(
             'CVContact', parent=styles['Normal'],
             fontSize=8, alignment=TA_CENTER, spaceAfter=3, spaceBefore=2,
-            textColor=GRAY, leading=10, fontName='Helvetica'
+            textColor=GRAY, leading=10, fontName=FONT_REGULAR
         )
         
         # Section header style (used inside gray bar)
         section_style = ParagraphStyle(
             'CVSection', parent=styles['Normal'],
-            fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER,
+            fontSize=9, fontName=FONT_BOLD, alignment=TA_CENTER,
             textColor=DARK_BLUE, spaceBefore=0, spaceAfter=0, leading=11
         )
         
@@ -822,20 +866,20 @@ def create_pdf_from_content(cv_content: str, template: str = "professional") -> 
         body_style = ParagraphStyle(
             'CVBody', parent=styles['Normal'],
             fontSize=9, leading=11, spaceAfter=1, alignment=TA_LEFT,
-            fontName='Helvetica'
+            fontName=FONT_REGULAR
         )
         
         # Bullet point style
         bullet_style = ParagraphStyle(
             'CVBullet', parent=styles['Normal'],
             fontSize=9, leading=11, spaceAfter=1,
-            leftIndent=14, bulletIndent=2, fontName='Helvetica'
+            leftIndent=14, bulletIndent=2, fontName=FONT_REGULAR
         )
         
         # Job title style - centered, bold
         job_title_style = ParagraphStyle(
             'CVJobTitle', parent=styles['Normal'],
-            fontSize=9, fontName='Helvetica-Bold', alignment=TA_CENTER,
+            fontSize=9, fontName=FONT_BOLD, alignment=TA_CENTER,
             spaceAfter=1, spaceBefore=3, textColor=BLACK, leading=11
         )
         
@@ -843,13 +887,13 @@ def create_pdf_from_content(cv_content: str, template: str = "professional") -> 
         detail_style = ParagraphStyle(
             'CVDetail', parent=styles['Normal'],
             fontSize=8, leading=10, leftIndent=14, spaceAfter=0,
-            fontName='Helvetica'
+            fontName=FONT_REGULAR
         )
         
         # Project title style - bold, left-aligned
         project_title_style = ParagraphStyle(
             'CVProjectTitle', parent=styles['Normal'],
-            fontSize=9, fontName='Helvetica-Bold', alignment=TA_LEFT,
+            fontSize=9, fontName=FONT_BOLD, alignment=TA_LEFT,
             spaceAfter=1, spaceBefore=3, textColor=BLACK, leading=11
         )
         
@@ -1067,10 +1111,12 @@ async def generate_pdf(data: dict):
         pdf_bytes = create_pdf_from_content(cv_content, template)
         
         # Return PDF as streaming response
+        # Sanitize filename for Content-Disposition header
+        safe_name = file_name.replace('"', '_')
         return StreamingResponse(
             BytesIO(pdf_bytes),
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={file_name}"}
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'}
         )
     except HTTPException:
         raise

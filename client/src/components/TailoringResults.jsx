@@ -8,27 +8,50 @@ export default function TailoringResults({ result, cvFileName }) {
   const [copySuccess, setCopySuccess] = useState(false)
   const [showFullDocument, setShowFullDocument] = useState(false)
 
+  // Extract the user's name from the first non-empty line of the tailored CV
+  const getUserFileName = () => {
+    if (result?.tailored_cv) {
+      const firstLine = result.tailored_cv.split('\n').find(l => l.trim())?.trim()
+      if (firstLine) {
+        const safeName = firstLine.replace(/[^a-zA-Z\s]/g, '').trim().replace(/\s+/g, '_')
+        if (safeName) return `${safeName}_Tailored_CV.pdf`
+      }
+    }
+    return cvFileName || 'tailored_cv.pdf'
+  }
+
   const handleGeneratePDF = async () => {
     setIsGeneratingPDF(true)
+    const downloadName = getUserFileName()
     try {
       const response = await pdfAPI.generate(
         result.tailored_cv,
         'professional',
-        cvFileName || 'tailored_cv.pdf'
+        downloadName
       )
       
       // response.data is already a Blob when responseType: 'blob'
       const url = window.URL.createObjectURL(response.data)
       const link = document.createElement('a')
       link.href = url
-      link.setAttribute('download', cvFileName || 'tailored_cv.pdf')
+      link.setAttribute('download', downloadName)
       document.body.appendChild(link)
       link.click()
       window.URL.revokeObjectURL(url)
       link.remove()
     } catch (err) {
       console.error('Failed to generate PDF:', err)
-      alert('Failed to generate PDF: ' + (err.response?.data?.detail || err.message))
+      let errorMsg = err.message
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text()
+          const json = JSON.parse(text)
+          errorMsg = json.detail || errorMsg
+        } catch (_) { /* ignore parse errors */ }
+      } else if (err.response?.data?.detail) {
+        errorMsg = err.response.data.detail
+      }
+      alert('Failed to generate PDF: ' + errorMsg)
     } finally {
       setIsGeneratingPDF(false)
     }
