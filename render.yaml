@@ -7,8 +7,9 @@ services:
   - type: web
     name: cv-tailor-backend
     env: python
-    buildCommand: pip install --prefer-binary -r server/requirements.txt
-    startCommand: cd server && uvicorn app.main:app --host 0.0.0.0 --port 10000
+    rootDir: server
+    buildCommand: pip install --prefer-binary -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
     envVars:
       - key: PORT
         value: 10000
@@ -21,8 +22,9 @@ services:
   - type: web
     name: cv-tailor-frontend
     env: node
-    buildCommand: cd client && npm install --legacy-peer-deps && npm run build
-    startCommand: cd client && npm run preview -- --host 0.0.0.0 --port 10001
+    rootDir: client
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: npm run preview -- --host 0.0.0.0 --port 10001
     envVars:
       - key: VITE_API_BASE_URL
         fromService:
