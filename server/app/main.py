@@ -108,10 +108,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allow all methods including preflight
+    allow_headers=["*"],  # Allow all headers
     expose_headers=["Content-Disposition", "Content-Type"],
-    max_age=3600,
+    max_age=86400,  # Cache preflight for 24 hours
 )
 
 # Initialize Excel-based user storage
