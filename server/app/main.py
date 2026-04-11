@@ -78,13 +78,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Initialize Excel-based user storage
-ensure_users_file()
-
-# CORS configuration - Allow all deployment platforms
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+# CORS configuration - Add middleware FIRST before routes
+# Allow deployment platforms with dynamic URLs
+def get_allowed_origins():
+    """Generate list of allowed origins for CORS"""
+    origins = [
         # Local development
         "http://localhost:3000",
         "http://localhost:5173",
@@ -96,25 +94,25 @@ app.add_middleware(
         "http://localhost:8001",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
-        # Render deployment
+        # Render deployment - specific URLs
         "https://cv-tailor-frontend-9gun.onrender.com",
         "https://cv-tailor-frontend.onrender.com",
-        # Allow all onrender.com domains (dynamic)
-        # Note: Render generates random subdomains, so we'll use the specific ones
-        # Production domains
-        "https://cv-tailor-app.vercel.app",
-        # Railway
-        "https://cv-tailor-frontend.railway.app",
-        # DigitalOcean
-        "https://cv-tailor-frontend.ondigitalocean.app",
-        # Heroku
-        "https://cv-tailor-frontend.herokuapp.com",
-    ],
+        # Add wildcard for any onrender.com subdomain (if FastAPI CORSMiddleware supports it)
+    ]
+    return origins
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition"],
+    expose_headers=["Content-Disposition", "Content-Type"],
+    max_age=3600,
 )
+
+# Initialize Excel-based user storage
+ensure_users_file()
 
 # Models
 class User(BaseModel):

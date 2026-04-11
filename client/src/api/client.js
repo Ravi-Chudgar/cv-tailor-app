@@ -32,7 +32,7 @@ apiClient.interceptors.response.use(
 
       try {
         const refreshToken = useAuthStore.getState().refreshToken
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+        const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, {
           refresh_token: refreshToken,
         })
 
@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
 
 // Auth endpoints
 export const authAPI = {
-  register: (data) => apiClient.post('/auth/register', data),
+  register: (data) => apiClient.post('/api/auth/register', data),
   login: (username, password) => {
     // Validate inputs
     if (!username || typeof username !== 'string') {
@@ -68,12 +68,12 @@ export const authAPI = {
     const payload = { username: username.trim(), password }
     console.log('[API] Login request payload:', { username: payload.username, password: '***' })
     console.log('[API] Payload types:', { username: typeof payload.username, password: typeof payload.password })
-    return apiClient.post('/auth/login', payload)
+    return apiClient.post('/api/auth/login', payload)
   },
-  getCurrentUser: () => apiClient.get('/auth/current-user'),
+  getCurrentUser: () => apiClient.get('/api/auth/current-user'),
   changePassword: (oldPassword, newPassword) =>
-    apiClient.post('/auth/change-password', { old_password: oldPassword, new_password: newPassword }),
-  logout: () => apiClient.post('/auth/logout'),
+    apiClient.post('/api/auth/change-password', { old_password: oldPassword, new_password: newPassword }),
+  logout: () => apiClient.post('/api/auth/logout'),
 }
 
 // CV endpoints
@@ -82,7 +82,7 @@ export const cvAPI = {
     console.log('[API] Uploading CV:', { name: file.name, size: file.size, type: file.type })
     const formData = new FormData()
     formData.append('file', file)
-    return apiClient.post('/cv/upload', formData, {
+    return apiClient.post('/api/cv/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(response => {
       console.log('[API] Upload successful:', response.data)
@@ -92,9 +92,9 @@ export const cvAPI = {
       throw error
     })
   },
-  list: () => apiClient.get('/cv/list'),
-  parse: (fileName) => apiClient.post('/cv/parse', { file_name: fileName }),
-  delete: (fileName) => apiClient.delete(`/cv/${fileName}`),
+  list: () => apiClient.get('/api/cv/list'),
+  parse: (fileName) => apiClient.post('/api/cv/parse', { file_name: fileName }),
+  delete: (fileName) => apiClient.delete(`/api/cv/${fileName}`),
 }
 
 // Job Description endpoints
@@ -108,7 +108,7 @@ export const jobAPI = {
       url: null
     }
     console.log('[API] Job analyze request:', { description: jobDescription.substring(0, 50) + '...', title: jobTitle, cvFileId })
-    return apiClient.post('/job/analyze', payload)
+    return apiClient.post('/api/job/analyze', payload)
   },
 }
 
@@ -122,19 +122,19 @@ export const tailorAPI = {
       location: location || undefined,
     }
     console.log('[API] Tailor request:', { cvFile: cvFile, jobDescLength: jobDescription.length })
-    return apiClient.post('/tailor/tailor', payload)
+    return apiClient.post('/api/tailor/tailor', payload)
   },
   batchTailor: (cvFile, jobDescriptions) =>
-    apiClient.post('/tailor/batch-tailor', {
+    apiClient.post('/api/tailor/batch-tailor', {
       cv_file: cvFile,
       job_descriptions: jobDescriptions,
     }),
   preview: (cvFile, jobDescription) =>
-    apiClient.get('/tailor/preview', {
+    apiClient.get('/api/tailor/preview', {
       params: { cv_file: cvFile, job_description: jobDescription },
     }),
   compare: (cvFile, tailoredFile) =>
-    apiClient.get('/tailor/compare', {
+    apiClient.get('/api/tailor/compare', {
       params: { cv_file: cvFile, tailored_file: tailoredFile },
     }),
 }
@@ -142,34 +142,34 @@ export const tailorAPI = {
 // PDF endpoints
 export const pdfAPI = {
   generate: (cvContent, template = 'professional', fileName = 'cv.pdf') =>
-    apiClient.post('/pdf/generate', {
+    apiClient.post('/api/pdf/generate', {
       cv_content: cvContent,
       template: template,
       file_name: fileName,
     }, { responseType: 'blob' }),
   download: (fileName) =>
-    apiClient.get(`/pdf/download/${fileName}`, { responseType: 'blob' }),
-  getTemplates: () => apiClient.get('/pdf/templates'),
+    apiClient.get(`/api/pdf/download/${fileName}`, { responseType: 'blob' }),
+  getTemplates: () => apiClient.get('/api/pdf/templates'),
   preview: (cvContent, template = 'professional') =>
-    apiClient.post('/pdf/preview', {
+    apiClient.post('/api/pdf/preview', {
       cv_content: cvContent,
       template: template,
     }),
   batchGenerate: (cvsList) =>
-    apiClient.post('/pdf/batch-generate', { cvs_content: cvsList }, { responseType: 'blob' }),
+    apiClient.post('/api/pdf/batch-generate', { cvs_content: cvsList }, { responseType: 'blob' }),
 }
 
 // Admin endpoints
 export const adminAPI = {
-  getUsers: () => apiClient.get('/admin/users'),
-  getUserById: (userId) => apiClient.get(`/admin/users/${userId}`),
-  deleteUser: (userId) => apiClient.delete(`/admin/users/${userId}`),
+  getUsers: () => apiClient.get('/api/admin/users'),
+  getUserById: (userId) => apiClient.get(`/api/admin/users/${userId}`),
+  deleteUser: (userId) => apiClient.delete(`/api/admin/users/${userId}`),
   toggleUserStatus: (userId, isActive) =>
-    apiClient.put(`/admin/users/${userId}/status`, { is_active: isActive }),
-  getSystemStats: () => apiClient.get('/admin/stats'),
-  getActivityLog: () => apiClient.get('/admin/activity-log'),
+    apiClient.put(`/api/admin/users/${userId}/status`, { is_active: isActive }),
+  getSystemStats: () => apiClient.get('/api/admin/stats'),
+  getActivityLog: () => apiClient.get('/api/admin/activity-log'),
   updateUserRole: (userId, role) =>
-    apiClient.put(`/admin/users/${userId}/role`, { role }),
+    apiClient.put(`/api/admin/users/${userId}/role`, { role }),
 }
 
 export default apiClient
